@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Project Number Generator Design System
+   Professional internal tool aesthetic with dark sidebar
+   All colors MUST be HSL */
+
+@layer base {
+  :root {
+    /* Core backgrounds */
+    --background: 220 20% 97%;
+    --foreground: 220 30% 15%;
+
+    /* Cards & elevated surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 220 30% 15%;
+
+    /* Popovers & dropdowns */
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 30% 15%;
+
+    /* Primary - Deep Navy Blue */
+    --primary: 220 70% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Soft gray */
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 30% 25%;
+
+    /* Muted elements */
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 50%;
+
+    /* Accent - Teal */
+    --accent: 175 60% 40%;
+    --accent-foreground: 0 0% 100%;
+
+    /* Status colors */
+    --status-active: 145 60% 40%;
+    --status-active-foreground: 145 60% 25%;
+    --status-active-bg: 145 40% 92%;
+    --status-on-hold: 40 80% 50%;
+    --status-on-hold-foreground: 40 70% 28%;
+    --status-on-hold-bg: 40 60% 90%;
+    --status-completed: 220 10% 55%;
+    --status-completed-foreground: 220 10% 35%;
+    --status-completed-bg: 220 10% 92%;
+
+    /* Destructive */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders & inputs */
+    --border: 220 20% 88%;
+    --input: 220 20% 88%;
+    --ring: 220 70% 35%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar - Dark navy theme */
+    --sidebar-background: 220 30% 18%;
+    --sidebar-foreground: 220 20% 75%;
+    --sidebar-primary: 175 60% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 40% 18%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 222 35% 20%;
+    --sidebar-ring: 175 60% 45%;
+    --sidebar-muted: 220 20% 55%;
+
+    /* Metric cards */
+    --metric-projects: 220 70% 35%;
+    --metric-active: 145 65% 42%;
+    --metric-clients: 175 60% 40%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 220 20% 95%;
+
+    --card: 222 40% 12%;
+    --card-foreground: 220 20% 95%;
+
+    --popover: 222 40% 12%;
+    --popover-foreground: 220 20% 95%;
+
+    --primary: 220 70% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 30% 20%;
+    --secondary-foreground: 220 20% 90%;
+
+    --muted: 222 30% 18%;
+    --muted-foreground: 220 15% 60%;
+
+    --accent: 175 60% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --status-active: 145 60% 45%;
+    --status-active-foreground: 145 60% 80%;
+    --status-active-bg: 145 40% 20%;
+    --status-on-hold: 40 80% 55%;
+    --status-on-hold-foreground: 40 70% 85%;
+    --status-on-hold-bg: 40 50% 18%;
+    --status-completed: 220 10% 60%;
+    --status-completed-foreground: 220 10% 85%;
+    --status-completed-bg: 220 10% 20%;
+
+    --destructive: 0 65% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 30% 22%;
+    --input: 222 30% 22%;
+    --ring: 220 70% 55%;
+
+    --sidebar-background: 222 50% 6%;
+    --sidebar-foreground: 220 20% 75%;
+    --sidebar-primary: 175 60% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 45% 14%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 222 40% 15%;
+    --sidebar-ring: 175 60% 50%;
+    --sidebar-muted: 220 15% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  /* Project number monospace styling */
+  .font-mono-project {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    letter-spacing: 0.02em;
+  }
+
+  /* Status badge utilities */
+  .status-active {
+    @apply bg-[hsl(var(--status-active-bg))] text-[hsl(var(--status-active-foreground))] font-semibold;
+  }
+
+  .status-on-hold {
+    @apply bg-[hsl(var(--status-on-hold-bg))] text-[hsl(var(--status-on-hold-foreground))] whitespace-nowrap font-semibold;
+  }
+
+  .status-completed {
+    @apply bg-[hsl(var(--status-completed-bg))] text-[hsl(var(--status-completed-foreground))] font-semibold;
+  }
+
+  /* Metric card gradients */
+  .metric-gradient-projects {
+    background: linear-gradient(135deg, hsl(222 47% 11%) 0%, hsl(220 70% 35%) 50%, hsl(210 60% 50%) 100%);
+  }
+
+  .metric-gradient-active {
+    background: linear-gradient(135deg, hsl(220 50% 20%) 0%, hsl(210 60% 40%) 50%, hsl(200 65% 55%) 100%);
+  }
+
+  .metric-gradient-clients {
+    background: linear-gradient(135deg, hsl(160 45% 35%) 0%, hsl(175 50% 45%) 50%, hsl(200 55% 55%) 100%);
+  }
+}
