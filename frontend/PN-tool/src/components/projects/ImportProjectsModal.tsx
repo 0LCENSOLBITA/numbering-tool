@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -318,67 +317,62 @@ export function ImportProjectsModal({ open, onOpenChange, onSuccess }: ImportPro
   const handleImport = async () => {
     if (!user || rows.length === 0) return;
     setIsImporting(true);
+    const API_BASE = "http://159.203.21.199/api";
 
     try {
       // Get existing clients
-      const { data: existingClients } = await supabase
-        .from("clients")
-        .select("id, client_name, prefix");
+      const clientsRes = await fetch(`${API_BASE}/clients?limit=1000&skip=0`);
+      const clientsData = await clientsRes.json();
+      const existingClients = clientsData?.data ?? [];
 
       const clientMap = new Map<string, string>();
-      existingClients?.forEach((c) => clientMap.set(c.client_name.toLowerCase(), c.id));
+      existingClients.forEach((c: any) => clientMap.set(c.name.toLowerCase(), c._id));
 
       // Find unique client names that don't exist
       const uniqueNewClients = [...new Set(rows.map((r) => r.client_name))]
         .filter((name) => !clientMap.has(name.toLowerCase()));
 
-      // Create missing clients with prefix from first 3 uppercase letters
+      // Create missing clients
       for (const name of uniqueNewClients) {
         const prefix = name.replace(/[^a-zA-Z0-9/]/g, "").substring(0, 3).toUpperCase() || "UNK";
-        const { data: newClient, error } = await supabase
-          .from("clients")
-          .insert({ client_name: name, prefix, created_by: user.id })
-          .select("id, client_name")
-          .single();
+        try {
+          const res = await fetch(`${API_BASE}/clients`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              prefix,
+              created_by: user.id,
+            }),
+          });
 
-        if (newClient) {
-          clientMap.set(name.toLowerCase(), newClient.id);
-        } else if (error) {
-          // If duplicate prefix, reuse an existing client for now
-          if (error.code === "23505") {
-            const { data: existingByName } = await supabase
-              .from("clients")
-              .select("id")
-              .eq("client_name", name)
-              .maybeSingle();
-
-            if (existingByName) {
-              clientMap.set(name.toLowerCase(), existingByName.id);
-              continue;
-            }
-
-            const { data: existingByPrefix } = await supabase
-              .from("clients")
-              .select("id")
-              .eq("prefix", prefix)
-              .maybeSingle();
-
-            if (existingByPrefix) {
-              clientMap.set(name.toLowerCase(), existingByPrefix.id);
-              continue;
+          const newClient = await res.json();
+          if (res.ok && newClient?.data) {
+            clientMap.set(name.toLowerCase(), newClient.data._id);
+          } else {
+            // Try to find existing if duplicate
+            const existingRes = await fetch(`${API_BASE}/clients?name=${encodeURIComponent(name)}`);
+            const existing = await existingRes.json();
+            if (existing?.data?.length > 0) {
+              clientMap.set(name.toLowerCase(), existing.data[0]._id);
             }
           }
-          toast({ title: `Failed to create client "${name}"`, description: error.message, variant: "destructive" });
+        } catch (error) {
+          console.error(`Failed to create client ${name}:`, error);
+          toast({
+            title: `Failed to create client "${name}"`,
+            description: "Check console for details",
+            variant: "destructive",
+          });
           setIsImporting(false);
           return;
         }
       }
 
-      // Build project inserts, deduplicating by project_number (last row wins)
-      const deduped = new Map<string, typeof rows[0]>();
+      // Build project inserts
+      const deduped = new Map<string, (typeof rows)[0]>();
       rows.forEach((r) => deduped.set(r.project_number, r));
 
-      // Handle duplicate project names by appending a suffix
       const nameCounts = new Map<string, number>();
       const projectInserts = Array.from(deduped.values()).map((r) => {
         const nameKey = r.project_name.toLowerCase();
@@ -387,21 +381,31 @@ export function ImportProjectsModal({ open, onOpenChange, onSuccess }: ImportPro
         const finalName = count === 0 ? r.project_name : `${r.project_name} ${count}`;
         return {
           project_number: r.project_number,
+          name: finalName,
           client_id: clientMap.get(r.client_name.toLowerCase())!,
-          project_name: finalName,
           status: r.status,
-          created_at: r.created_at,
-          created_by: null,
+          created_by: user.id,
         };
       });
 
-      const { error } = await supabase.from("projects").upsert(projectInserts, {
-        onConflict: "project_number",
-        ignoreDuplicates: false,
-      });
+      // Insert projects
+      const importRes = await Promise.all(
+        projectInserts.map((insert) =>
+          fetch(`${API_BASE}/projects`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(insert),
+          }).then((res) => res.json())
+        )
+      );
 
-      if (error) {
-        toast({ title: "Import failed", description: error.message, variant: "destructive" });
+      const hasErrors = importRes.some((r) => r.error);
+      if (hasErrors) {
+        toast({
+          title: "Import completed with errors",
+          description: "Some projects could not be imported",
+          variant: "destructive",
+        });
       } else {
         toast({ title: `Successfully imported ${rows.length} project(s)` });
         onSuccess();
@@ -409,7 +413,11 @@ export function ImportProjectsModal({ open, onOpenChange, onSuccess }: ImportPro
         onOpenChange(false);
       }
     } catch (e) {
-      toast({ title: "Import error", description: (e as Error).message, variant: "destructive" });
+      toast({
+        title: "Import error",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
     }
 
     setIsImporting(false);

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { MetricCard } from "@/components/projects/MetricCard";
 import { ProjectsTable } from "@/components/projects/ProjectsTable";
 import { CreateProjectModal } from "@/components/projects/CreateProjectModal";
@@ -54,98 +53,134 @@ export default function Index() {
   const [completedProjectsCount, setCompletedProjectsCount] = useState(0);
 
   const fetchCounts = useCallback(async () => {
-    const [{ count: total }, { count: active }, { count: onHold }, { count: completed }] = await Promise.all([
-      supabase.from("projects").select("*", { count: "exact", head: true }),
-      supabase.from("projects").select("*", { count: "exact", head: true }).eq("status", "active"),
-      supabase.from("projects").select("*", { count: "exact", head: true }).eq("status", "on_hold"),
-      supabase.from("projects").select("*", { count: "exact", head: true }).eq("status", "completed"),
-    ]);
-    setTotalProjectsCount(total ?? 0);
-    setActiveProjectsCount(active ?? 0);
-    setOnHoldProjectsCount(onHold ?? 0);
-    setCompletedProjectsCount(completed ?? 0);
+    const API_BASE = "http://159.203.21.199/api";
+    try {
+      const [totalRes, activeRes, onHoldRes, completedRes] = await Promise.all([
+        fetch(`${API_BASE}/projects?limit=1&skip=0`),
+        fetch(`${API_BASE}/projects?status=active&limit=1&skip=0`),
+        fetch(`${API_BASE}/projects?status=on_hold&limit=1&skip=0`),
+        fetch(`${API_BASE}/projects?status=completed&limit=1&skip=0`),
+      ]);
+
+      const totalData = await totalRes.json();
+      const activeData = await activeRes.json();
+      const onHoldData = await onHoldRes.json();
+      const completedData = await completedRes.json();
+
+      setTotalProjectsCount(totalData?.pagination?.total ?? 0);
+      setActiveProjectsCount(activeData?.pagination?.total ?? 0);
+      setOnHoldProjectsCount(onHoldData?.pagination?.total ?? 0);
+      setCompletedProjectsCount(completedData?.pagination?.total ?? 0);
+    } catch (error) {
+      console.error("Error fetching project counts:", error);
+    }
   }, []);
 
   const fetchData = useCallback(async () => {
     setIsTableLoading(true);
+    const API_BASE = "http://159.203.21.199/api";
 
-    // Fetch clients & profiles
-    const [{ data: clientsData }, { data: profilesData }] = await Promise.all([
-      supabase.from("clients").select("id, client_name, prefix").order("client_name"),
-      supabase.from("profiles").select("user_id, full_name, email").order("full_name"),
-    ]);
+    try {
+      // Fetch clients & profiles
+      const [clientsRes, profilesRes] = await Promise.all([
+        fetch(`${API_BASE}/clients?limit=1000&skip=0`),
+        fetch(`${API_BASE}/users?limit=1000&skip=0`),
+      ]);
 
-    if (clientsData) setClients(clientsData);
-    if (profilesData) setProfiles(profilesData);
+      const clientsDataRes = await clientsRes.json();
+      const profilesDataRes = await profilesRes.json();
 
-    // Fetch ALL projects using pagination to bypass 1000-row limit
-    let allProjects: Project[] = [];
-    const PAGE = 1000;
-    let from = 0;
-    let keepFetching = true;
+      const clientsData = clientsDataRes?.data ?? [];
+      const profilesData = profilesDataRes?.data ?? [];
 
-    while (keepFetching) {
-      let query = supabase
-        .from("projects")
-        .select(`
-          id,
-          project_number,
-          project_name,
-          description,
-          status,
-          created_at,
-          created_by,
-          clients (id, client_name, prefix)
-        `)
-        .order("created_at", { ascending: false })
-        .range(from, from + PAGE - 1);
+      // Map API response to UI structure
+      const mappedClients = clientsData.map((c: any) => ({
+        id: c._id,
+        client_name: c.name,
+        prefix: c.prefix,
+      }));
 
-      if (clientFilter !== "all") {
-        query = query.eq("client_id", clientFilter);
+      const mappedProfiles = profilesData.map((p: any) => ({
+        user_id: p._id,
+        full_name: p.display_name || p.first_name,
+        email: p.email,
+      }));
+
+      setClients(mappedClients);
+      setProfiles(mappedProfiles);
+
+      // Fetch ALL projects using pagination
+      let allProjects: Project[] = [];
+      const PAGE = 100;
+      let skip = 0;
+      let keepFetching = true;
+
+      while (keepFetching) {
+        // Build query parameters
+        const params = new URLSearchParams();
+        params.append("limit", PAGE.toString());
+        params.append("skip", skip.toString());
+
+        if (clientFilter !== "all") {
+          params.append("client_id", clientFilter);
+        }
+
+        if (statusFilters.length > 0 && statusFilters.length < 3) {
+          params.append("status", statusFilters[0]);
+        }
+
+        // Note: created_by filtering would need API support
+        // if (createdByFilter !== "all") {
+        //   params.append("created_by", createdByFilter);
+        // }
+
+        const url = `${API_BASE}/projects?${params.toString()}`;
+        const res = await fetch(url);
+        const projectsDataRes = await res.json();
+        const projectsData = projectsDataRes?.data ?? [];
+
+        // Map API response to UI structure
+        const batch = projectsData.map((p: any) => ({
+          id: p._id,
+          project_number: p.project_number,
+          project_name: p.name,
+          description: p.description,
+          status: p.status,
+          created_at: p.createdAt,
+          created_by: p.created_by instanceof Object ? p.created_by._id : p.created_by,
+          clients: {
+            id: p.client_id instanceof Object ? p.client_id._id : p.client_id,
+            client_name: p.client_id instanceof Object ? p.client_id.name : "",
+            prefix: p.client_id instanceof Object ? p.client_id.prefix : "",
+          },
+        }));
+
+        allProjects = allProjects.concat(batch);
+
+        if (batch.length < PAGE) {
+          keepFetching = false;
+        } else {
+          skip += PAGE;
+        }
       }
 
-      if (statusFilters.length > 0 && statusFilters.length < 3) {
-        query = query.in("status", statusFilters as any);
+      let filtered = allProjects;
+
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        filtered = filtered.filter(
+          (p) =>
+            p.project_number.toLowerCase().includes(term) ||
+            p.project_name.toLowerCase().includes(term) ||
+            p.clients.client_name.toLowerCase().includes(term)
+        );
       }
 
-      if (createdByFilter !== "all") {
-        query = query.eq("created_by", createdByFilter);
-      }
-
-      if (startDate) {
-        query = query.gte("created_at", startDate.toISOString());
-      }
-
-      if (endDate) {
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        query = query.lte("created_at", endOfDay.toISOString());
-      }
-
-      const { data } = await query;
-      const batch = (data ?? []) as unknown as Project[];
-      allProjects = allProjects.concat(batch);
-
-      if (batch.length < PAGE) {
-        keepFetching = false;
-      } else {
-        from += PAGE;
-      }
+      setProjects(filtered);
+    } catch (error) {
+      console.error("Error fetching data:", error);
     }
 
-    let filtered = allProjects;
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (p) =>
-          p.project_number.toLowerCase().includes(term) ||
-          p.project_name.toLowerCase().includes(term) ||
-          p.clients.client_name.toLowerCase().includes(term)
-      );
-    }
-
-    setProjects(filtered);
     setIsTableLoading(false);
   }, [clientFilter, statusFilters, createdByFilter, startDate, endDate, searchTerm]);
 

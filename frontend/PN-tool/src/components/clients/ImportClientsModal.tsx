@@ -1,6 +1,5 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -183,19 +182,33 @@ export function ImportClientsModal({ open, onOpenChange, onSuccess }: ImportClie
   const handleImport = async () => {
     if (!user || rows.length === 0) return;
     setIsImporting(true);
+    const API_BASE = "http://159.203.21.199/api";
 
     try {
       const inserts = rows.map((r) => ({
-        client_name: r.client_name,
+        name: r.client_name,
         prefix: r.prefix,
-        created_at: r.created_at,
         created_by: user.id,
       }));
 
-      const { error } = await supabase.from("clients").insert(inserts);
+      // Import clients one by one or in batch
+      const results = await Promise.all(
+        inserts.map((insert) =>
+          fetch(`${API_BASE}/clients`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(insert),
+          }).then((res) => res.json())
+        )
+      );
 
-      if (error) {
-        toast({ title: "Import failed", description: error.message, variant: "destructive" });
+      const hasErrors = results.some((r) => r.error);
+      if (hasErrors) {
+        toast({
+          title: "Import completed with errors",
+          description: "Some clients could not be imported",
+          variant: "destructive",
+        });
       } else {
         toast({ title: `Successfully imported ${rows.length} client(s)` });
         onSuccess();
@@ -203,7 +216,11 @@ export function ImportClientsModal({ open, onOpenChange, onSuccess }: ImportClie
         onOpenChange(false);
       }
     } catch (e) {
-      toast({ title: "Import error", description: (e as Error).message, variant: "destructive" });
+      toast({
+        title: "Import error",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
     }
 
     setIsImporting(false);

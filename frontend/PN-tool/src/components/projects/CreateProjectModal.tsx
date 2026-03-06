@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,23 +97,32 @@ export function CreateProjectModal({ open, onOpenChange, onSuccess }: CreateProj
   }, [selectedClientId]);
 
   const fetchClients = async () => {
-    const { data } = await supabase
-      .from("clients")
-      .select("id, client_name, prefix")
-      .order("client_name");
-    
-    if (data) {
-      setClients(data);
+    const API_BASE = "http://159.203.21.199/api";
+    try {
+      const res = await fetch(`${API_BASE}/clients?limit=1000&skip=0`);
+      const data = await res.json();
+      const clientsData = data?.data ?? [];
+
+      // Map API response to UI structure
+      const mapped = clientsData.map((c: any) => ({
+        id: c._id,
+        client_name: c.name,
+        prefix: c.prefix,
+      })).sort((a: any, b: any) => a.client_name.localeCompare(b.client_name));
+      
+      setClients(mapped);
+    } catch (error) {
+      console.error("Error fetching clients:", error);
     }
   };
 
   const generateProjectNumber = async (clientId: string) => {
-    const { data, error } = await supabase.rpc("generate_project_number", {
-      _client_id: clientId,
-    });
-
-    if (!error && data) {
-      setProjectNumber(data);
+    // For now, generate a simple format: PREFIX-001, PREFIX-002, etc.
+    // This functionality may need to be implemented in the backend
+    const client = clients.find(c => c.id === clientId);
+    if (client) {
+      const timestamp = Date.now().toString().slice(-4);
+      setProjectNumber(`${client.prefix}-${timestamp}`);
     }
   };
 
@@ -122,26 +130,37 @@ export function CreateProjectModal({ open, onOpenChange, onSuccess }: CreateProj
     if (!user || !projectNumber) return;
 
     setIsLoading(true);
+    const API_BASE = "http://159.203.21.199/api";
 
-    const { error } = await supabase.from("projects").insert({
-      project_number: projectNumber,
-      client_id: data.clientId,
-      project_name: data.name,
-      description: data.description || null,
-      created_by: user.id,
-    });
+    try {
+      const res = await fetch(`${API_BASE}/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_number: projectNumber,
+          name: data.name,
+          description: data.description || null,
+          client_id: data.clientId,
+          created_by: user.id,
+        }),
+      });
 
-    if (error) {
+      const resData = await res.json();
+
+      if (!res.ok) {
+        throw new Error(resData?.error || "Failed to create project");
+      }
+
+      toast({ title: "Project created successfully" });
+      setPendingCreatedClientId(null);
+      onSuccess();
+      onOpenChange(false);
+    } catch (error: any) {
       toast({
         title: "Error creating project",
         description: error.message,
         variant: "destructive",
       });
-    } else {
-      toast({ title: "Project created successfully" });
-      setPendingCreatedClientId(null); // Clear since project was saved
-      onSuccess();
-      onOpenChange(false);
     }
 
     setIsLoading(false);
@@ -173,7 +192,14 @@ export function CreateProjectModal({ open, onOpenChange, onSuccess }: CreateProj
   const handleLeave = async () => {
     // Delete the pending client if it was created but project not saved
     if (pendingCreatedClientId) {
-      await supabase.from("clients").delete().eq("id", pendingCreatedClientId);
+      const API_BASE = "http://159.203.21.199/api";
+      try {
+        await fetch(`${API_BASE}/clients/${pendingCreatedClientId}`, {
+          method: "DELETE",
+        });
+      } catch (error) {
+        console.error("Error cleaning up client:", error);
+      }
     }
     setShowUnsavedDialog(false);
     setPendingCreatedClientId(null);

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,32 +15,42 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
+const App = () => {
 
-            <Route element={<MainLayout><Outlet /></MainLayout>}>
-              <Route path="/" element={<Index />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/profile" element={<Profile />} />
-            </Route>
+  useEffect(() => {
+    fetch("/api/test")
+      .then(res => res.json())
+      .then(data => console.log("BACKEND RESPONSE:", data))
+      .catch(err => console.error("ERROR:", err));
+  }, []);
 
-            <Route element={<MainLayout requireAdmin><Outlet /></MainLayout>}>
-              <Route path="/users" element={<Users />} />
-            </Route>
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <AuthProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+              <Route element={<MainLayout><Outlet /></MainLayout>}>
+                <Route path="/" element={<Index />} />
+                <Route path="/clients" element={<Clients />} />
+                <Route path="/profile" element={<Profile />} />
+              </Route>
+
+              <Route element={<MainLayout requireAdmin><Outlet /></MainLayout>}>
+                <Route path="/users" element={<Users />} />
+              </Route>
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;

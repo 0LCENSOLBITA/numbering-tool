@@ -1,1 +1,0 @@
-ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;

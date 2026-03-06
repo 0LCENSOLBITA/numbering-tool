@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,13 +52,21 @@ export default function Clients() {
 
   const fetchClients = useCallback(async () => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from("clients")
-      .select("id, client_name, prefix, created_at")
-      .order("client_name");
+    const API_BASE = "http://159.203.21.199/api";
 
-    if (data) {
-      let filtered = data;
+    try {
+      const res = await fetch(`${API_BASE}/clients?limit=1000&skip=0`);
+      const data = await res.json();
+      const clientsData = data?.data ?? [];
+
+      // Map API response to UI structure
+      let filtered = clientsData.map((c: any) => ({
+        id: c._id,
+        client_name: c.name,
+        prefix: c.prefix,
+        created_at: c.createdAt,
+      }));
+
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         filtered = filtered.filter(
@@ -69,6 +76,8 @@ export default function Clients() {
         );
       }
       setClients(filtered);
+    } catch (error) {
+      console.error("Error fetching clients:", error);
     }
     setIsLoading(false);
   }, [searchTerm]);
@@ -86,13 +95,32 @@ export default function Clients() {
   const handleDeleteClient = async () => {
     if (!deletingClient) return;
     setIsDeleting(true);
-    const { error } = await supabase.from("clients").delete().eq("id", deletingClient.id);
-    if (error) {
-      toast({ title: "Error deleting client", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Client deleted successfully" });
-      fetchClients();
+    const API_BASE = "http://159.203.21.199/api";
+
+    try {
+      const res = await fetch(`${API_BASE}/clients/${deletingClient.id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        toast({ 
+          title: "Error deleting client", 
+          description: errorData?.error || "Unknown error", 
+          variant: "destructive" 
+        });
+      } else {
+        toast({ title: "Client deleted successfully" });
+        fetchClients();
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error deleting client",
+        description: error.message,
+        variant: "destructive",
+      });
     }
+
     setDeletingClient(null);
     setIsDeleting(false);
   };

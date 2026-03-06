@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -104,91 +103,44 @@ export function EditUserModal({ open, onOpenChange, onSuccess, user }: EditUserM
   const handleSubmit = async (data: EditUserFormData) => {
     if (!user) return;
     setIsLoading(true);
+    const API_BASE = "http://159.203.21.199/api";
 
-    const fullName = data.name.trim();
-    const nameParts = fullName.split(' ').filter(Boolean);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-    const shortName = `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || firstName[0]?.toUpperCase() || '?';
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update({
-        first_name: firstName,
-        last_name: lastName || null,
-        full_name: fullName,
-        short_name: shortName,
-      })
-      .eq("user_id", user.user_id);
+    try {
+      const fullName = data.name.trim();
+      const nameParts = fullName.split(' ').filter(Boolean);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      const shortName = `${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase() || firstName[0]?.toUpperCase() || '?';
 
-    if (profileError) {
+      // Update user profile
+      const res = await fetch(`${API_BASE}/users/${user.user_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName || null,
+          display_name: fullName,
+          short_name: shortName,
+          roles: [data.role],
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData?.error || "Failed to update user");
+      }
+
+      toast({ title: "User updated successfully" });
+      onSuccess();
+      onOpenChange(false);
+    } catch (error: any) {
       toast({
         title: "Error updating user",
-        description: profileError.message,
+        description: error.message,
         variant: "destructive",
       });
-      setIsLoading(false);
-      return;
     }
 
-    // Try update first, then insert if no row existed
-    const { data: existingRole } = await supabase
-      .from("user_roles")
-      .select("id")
-      .eq("user_id", user.user_id)
-      .maybeSingle();
-
-    let roleError;
-    if (existingRole) {
-      const { error } = await supabase
-        .from("user_roles")
-        .update({ role: data.role })
-        .eq("user_id", user.user_id);
-      roleError = error;
-    } else {
-      const { error } = await supabase
-        .from("user_roles")
-        .insert({ user_id: user.user_id, role: data.role });
-      roleError = error;
-    }
-
-    if (roleError) {
-      toast({
-        title: "Error updating role",
-        description: roleError.message,
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    // Handle email and/or password change via edge function
-    const emailChanged = data.email.trim() !== user.email;
-    if (emailChanged || data.newPassword) {
-      const body: Record<string, string> = { user_id: user.user_id };
-      if (emailChanged) body.email = data.email.trim();
-      if (data.newPassword) body.password = data.newPassword;
-
-      const { error: authError } = await supabase.functions.invoke("admin-update-user", { body });
-
-      if (authError) {
-        toast({
-          title: "Error updating user",
-          description: authError.message,
-          variant: "destructive",
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      // Also update email in profiles table
-      if (emailChanged) {
-        await supabase.from("profiles").update({ email: data.email.trim() }).eq("user_id", user.user_id);
-      }
-    }
-
-    toast({ title: "User updated successfully" });
-    onSuccess();
-    onOpenChange(false);
     setIsLoading(false);
   };
 

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -40,27 +39,28 @@ export default function Users() {
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
+    const API_BASE = "http://159.203.21.199/api";
 
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, user_id, email, full_name, first_name, last_name, created_at")
-      .order("created_at", { ascending: false });
+    try {
+      const res = await fetch(`${API_BASE}/users?limit=1000&skip=0`);
+      const usersDataRes = await res.json();
+      const profiles = usersDataRes?.data ?? [];
 
-    if (profiles) {
-      const userIds = profiles.map((p) => p.user_id);
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("user_id, role")
-        .in("user_id", userIds);
-
-      const roleMap = new Map(roles?.map((r) => [r.user_id, r.role as UserRole]));
-
-      const usersWithRoles: UserProfile[] = profiles.map((p) => ({
-        ...p,
-        role: roleMap.get(p.user_id) || "user",
+      // Map API response to UI structure  
+      const usersWithRoles: UserProfile[] = profiles.map((p: any) => ({
+        id: p._id,
+        user_id: p._id,
+        email: p.email,
+        full_name: p.display_name || `${p.first_name} ${p.last_name}`.trim(),
+        first_name: p.first_name,
+        last_name: p.last_name,
+        created_at: p.createdAt,
+        role: p.roles?.includes("admin") ? "admin" : "user",
       }));
 
       setUsers(usersWithRoles);
+    } catch (error) {
+      console.error("Error fetching users:", error);
     }
 
     setIsLoading(false);

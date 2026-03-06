@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,14 +25,14 @@ interface ExportProjectsDrawerProps {
 }
 
 interface ExportClient {
-  id: string;
-  client_name: string;
+  _id: string;
+  name: string;
   prefix: string;
 }
 
 interface ExportProfile {
-  user_id: string;
-  full_name: string | null;
+  _id: string;
+  display_name: string | null;
   email: string;
 }
 
@@ -113,47 +112,78 @@ export function ExportProjectsDrawer({
   useEffect(() => {
     if (!open) return;
     const fetchMeta = async () => {
-      const [{ data: c }, { data: p }] = await Promise.all([
-        supabase.from("clients").select("id, client_name, prefix").order("client_name"),
-        supabase.from("profiles").select("user_id, full_name, email").order("full_name"),
-      ]);
-      if (c) setClients(c);
-      if (p) setProfiles(p);
+      const API_BASE = "http://159.203.21.199/api";
+      try {
+        const [clientRes, profileRes] = await Promise.all([
+          fetch(`${API_BASE}/clients?limit=1000&skip=0`),
+          fetch(`${API_BASE}/users?limit=1000&skip=0`),
+        ]);
+        const clientData = await clientRes.json();
+        const profileData = await profileRes.json();
+
+        if (clientData?.data) {
+          setClients(
+            clientData.data.map((c: any) => ({ 
+              _id: c._id, 
+              name: c.name, 
+              prefix: c.prefix 
+            }))
+          );
+        }
+        if (profileData?.data) {
+          setProfiles(
+            profileData.data.map((p: any) => ({
+              _id: p._id,
+              display_name: p.display_name,
+              email: p.email,
+            }))
+          );
+        }
+      } catch (error) {
+        console.error("Failed to fetch metadata:", error);
+      }
     };
     fetchMeta();
   }, [open]);
 
-  // Build query for count & export
-  const buildQuery = useCallback(
-    (selectStr: string, forCount = false) => {
-      let query = supabase.from("projects").select(selectStr, forCount ? { count: "exact", head: true } : {});
-      if (clientFilter !== "all") query = query.eq("client_id", clientFilter);
-      if (createdByFilter !== "all") query = query.eq("created_by", createdByFilter);
-      if (statusFilters.length > 0 && statusFilters.length < 3) {
-        query = query.in("status", statusFilters as any);
-      }
-      if (startDate) query = query.gte("created_at", startDate.toISOString());
-      if (endDate) {
-        const endOfDay = new Date(endDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        query = query.lte("created_at", endOfDay.toISOString());
-      }
-      return query.order("created_at", { ascending: false });
-    },
-    [clientFilter, createdByFilter, statusFilters, startDate, endDate]
-  );
+  // Build URL params for query
+  const buildQueryParams = useCallback(() => {
+    const params = new URLSearchParams();
+    params.append("limit", "10000");
+    params.append("skip", "0");
+    if (clientFilter !== "all") params.append("client_id", clientFilter);
+    if (createdByFilter !== "all") params.append("created_by", createdByFilter);
+    if (statusFilters.length > 0 && statusFilters.length < 3) {
+      params.append("status", statusFilters.join(","));
+    }
+    if (startDate) params.append("startDate", startDate.toISOString());
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      params.append("endDate", endOfDay.toISOString());
+    }
+    return params;
+  }, [clientFilter, createdByFilter, statusFilters, startDate, endDate]);
 
   // Live count
   useEffect(() => {
     if (!open) return;
     const fetchCount = async () => {
       setIsCountLoading(true);
-      const { count } = await buildQuery("*", true);
-      setRecordCount(count ?? 0);
+      const API_BASE = "http://159.203.21.199/api";
+      try {
+        const params = buildQueryParams();
+        const res = await fetch(`${API_BASE}/projects?${params}`);
+        const data = await res.json();
+        setRecordCount(data?.pagination?.total ?? 0);
+      } catch (error) {
+        console.error("Failed to fetch count:", error);
+        setRecordCount(0);
+      }
       setIsCountLoading(false);
     };
     fetchCount();
-  }, [open, buildQuery]);
+  }, [open, buildQueryParams]);
 
   // Status toggle
   const toggleStatus = (value: string) => {
@@ -200,41 +230,34 @@ export function ExportProjectsDrawer({
     setIsExporting(true);
 
     try {
-      const { data, error } = await buildQuery(`
-        id,
-        project_number,
-        project_name,
-        description,
-        status,
-        created_at,
-        created_by,
-        clients (client_name, prefix)
-      `);
+      const API_BASE = "http://159.203.21.199/api";
+      const params = buildQueryParams();
+      const res = await fetch(`${API_BASE}/projects?${params}`);
+      const data = await res.json();
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
+      if (!data?.data || data.data.length === 0) {
         toast.error("No data to export");
         setIsExporting(false);
         return;
       }
 
-      // Build profile lookup
-      const profileMap = new Map(profiles.map((p) => [p.user_id, p.full_name || p.email]));
+      // Build profile lookup (use _id for MongoDB)
+      const profileMap = new Map(profiles.map((p) => [p._id, p.display_name || p.email]));
 
       // Map rows to selected fields
       const fieldOrder = ALL_FIELDS.filter((f) => selectedFields.includes(f.key));
       const headers = fieldOrder.map((f) => f.label);
 
-      const rows = (data as any[]).map((row) =>
+      const rows = (data.data as any[]).map((row) =>
         fieldOrder.map((f) => {
           switch (f.key) {
             case "project_number": return row.project_number;
-            case "client_name": return row.clients?.client_name ?? "";
-            case "client_prefix": return row.clients?.prefix ?? "";
-            case "name": return row.project_name;
+            case "client_name": return row.client_id?.name ?? "";
+            case "client_prefix": return row.client_id?.prefix ?? "";
+            case "name": return row.name;
             case "description": return row.description ?? "";
             case "status": return formatStatus(row.status);
-            case "created_at": return format(new Date(row.created_at), "yyyy-MM-dd");
+            case "created_at": return format(new Date(row.createdAt), "yyyy-MM-dd");
             case "created_by_name": return profileMap.get(row.created_by) ?? "";
             default: return "";
           }

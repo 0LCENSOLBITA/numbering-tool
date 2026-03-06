@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,19 +34,27 @@ export function DeleteProjectDialog({
     if (!projectId) return;
 
     setIsLoading(true);
+    const API_BASE = "http://159.203.21.199/api";
 
-    const { error } = await supabase.from("projects").delete().eq("id", projectId);
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}`, {
+        method: "DELETE",
+      });
 
-    if (error) {
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData?.error || "Failed to delete project");
+      }
+
+      toast({ title: "Project deleted successfully" });
+      onSuccess();
+      onOpenChange(false);
+    } catch (error: any) {
       toast({
         title: "Error deleting project",
         description: error.message,
         variant: "destructive",
       });
-    } else {
-      toast({ title: "Project deleted successfully" });
-      onSuccess();
-      onOpenChange(false);
     }
 
     setIsLoading(false);
@@ -64,8 +71,10 @@ export function DeleteProjectDialog({
             cannot be undone and the project number will never be reused.
           </AlertDialogDescription>
         </AlertDialogHeader>
+
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+
           <AlertDialogAction
             onClick={handleDelete}
             disabled={isLoading}
@@ -75,6 +84,7 @@ export function DeleteProjectDialog({
             Delete Project
           </AlertDialogAction>
         </AlertDialogFooter>
+
       </AlertDialogContent>
     </AlertDialog>
   );
